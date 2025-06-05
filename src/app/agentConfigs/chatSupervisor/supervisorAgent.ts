@@ -273,6 +273,11 @@ export const getNextResponseFromSupervisor = tool({
         }
       });
 
+      // addd completed field to each task
+      tasks.forEach((task: any) => {
+        task.completed = "active";
+      });
+
       console.log("tasks", tasks);
 
       // Create a Blob with formatted JSON
