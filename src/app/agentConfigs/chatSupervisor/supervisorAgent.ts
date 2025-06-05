@@ -1,14 +1,10 @@
 import { RealtimeItem, tool } from "@openai/agents/realtime";
-import fs from "fs/promises";
-import path from "path";
 
 import {
   exampleAccountInfo,
   examplePolicyDocs,
   exampleStoreLocations,
 } from "./sampleData";
-
-const TASKS_FILE_PATH = path.join(process.cwd(), "tasks.json");
 
 export const supervisorAgentInstructions = `
 You are a supervisor agent. You will be given a task and you will need to complete it. You will need to use the tools provided to you to complete the task. You will need to use the handoffs to complete the task. You will need to use the tools to complete the task. You will need to use the handoffs to complete the task. You will need to use the tools to complete the task. You will need to use the handoffs to complete the task.
@@ -283,7 +279,7 @@ export const getNextResponseFromSupervisor = tool({
       console.log("tasks", tasks);
 
       // Save tasks to tasks.json
-      await fs.writeFile(TASKS_FILE_PATH, JSON.stringify({ tasks }, null, 2));
+      await saveTasks(tasks);
 
       return {
         tasks: tasks,
@@ -295,3 +291,30 @@ export const getNextResponseFromSupervisor = tool({
     }
   },
 });
+
+async function readTasks() {
+  const response = await fetch("/api/supervisor", {
+    method: "GET",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+  if (!response.ok) {
+    throw new Error("Failed to read tasks");
+  }
+  return response.json();
+}
+
+async function saveTasks(tasks: any) {
+  const response = await fetch("/api/supervisor", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(tasks),
+  });
+  if (!response.ok) {
+    throw new Error("Failed to save tasks");
+  }
+  return response.json();
+}

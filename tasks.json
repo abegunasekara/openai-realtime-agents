@@ -1,25 +1,9 @@
-{
-  "tasks": [
-    {
-      "taskId": "TASK-1",
-      "title": "Prepare Weekly Report",
-      "description": "Compile data from all departments and create a summary report for the week.",
-      "estimatedMinutes": 30,
-      "completed": "active"
-    },
-    {
-      "taskId": "TASK-2",
-      "title": "Respond to Client Emails",
-      "description": "Read and reply to outstanding client emails to address their queries and concerns.",
-      "estimatedMinutes": 30,
-      "completed": "active"
-    },
-    {
-      "taskId": "TASK-3",
-      "title": "Update Project Timeline",
-      "description": "Review project progress and update the timeline document to reflect current status and future milestones.",
-      "estimatedMinutes": 30,
-      "completed": "active"
-    }
-  ]
-}
+[
+  {
+    "taskId": "TASK-1",
+    "title": "Set Bedtime Reminder",
+    "description": "Schedule and set a reminder for the user to go to bed at 8:30 PM as requested. Ensure the reminder is created for tomorrow and confirm the details with the user.",
+    "estimatedMinutes": 2,
+    "completed": "active"
+  }
+]

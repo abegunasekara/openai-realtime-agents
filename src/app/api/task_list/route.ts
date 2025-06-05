@@ -5,6 +5,13 @@ import path from "path";
 
 const TASKS_FILE_PATH = path.join(process.cwd(), "tasks.json");
 
+// CORS headers to allow all origins
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization",
+};
+
 async function readTasksFromFile() {
   try {
     const fileContent = await fs.readFile(TASKS_FILE_PATH, "utf-8");
@@ -19,15 +26,20 @@ async function saveTasksToFile(tasks: any) {
   await fs.writeFile(TASKS_FILE_PATH, JSON.stringify({ tasks }, null, 2));
 }
 
+// Handle OPTIONS request for CORS
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders });
+}
+
 export async function GET() {
   try {
     const tasksData = await readTasksFromFile();
-    return NextResponse.json(tasksData);
+    return NextResponse.json(tasksData, { headers: corsHeaders });
   } catch (error) {
     console.error("Error reading task list:", error);
     return NextResponse.json(
       { error: "Failed to read task list" },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }
@@ -72,7 +84,7 @@ Do not include any other text or explanation in your response, only the JSON arr
       console.error("No response from OpenAI");
       return NextResponse.json(
         { error: "Failed to get response" },
-        { status: 500 }
+        { status: 500, headers: corsHeaders }
       );
     }
 
@@ -107,7 +119,7 @@ Do not include any other text or explanation in your response, only the JSON arr
       // Validate each task has required fields
       tasks.forEach((task: any, index: number) => {
         if (
-          !task.taskId ||
+          !task.id ||
           !task.title ||
           !task.description ||
           !task.estimatedMinutes
@@ -129,19 +141,22 @@ Do not include any other text or explanation in your response, only the JSON arr
       await saveTasksToFile(formattedTasks);
       console.log("Tasks saved to file:", TASKS_FILE_PATH);
 
-      return NextResponse.json({ tasks: formattedTasks });
+      return NextResponse.json(
+        { tasks: formattedTasks },
+        { headers: corsHeaders }
+      );
     } catch (error) {
       console.error("Error parsing response:", error);
       return NextResponse.json(
         { error: "Failed to parse tasks" },
-        { status: 500 }
+        { status: 500, headers: corsHeaders }
       );
     }
   } catch (error) {
     console.error("Error fetching task list:", error);
     return NextResponse.json(
       { error: "Failed to fetch task list" },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 }
