@@ -5,6 +5,7 @@ import {
   examplePolicyDocs,
   exampleStoreLocations,
 } from "./sampleData";
+import { ta } from "zod/v4/locales";
 
 export const supervisorAgentInstructions = `
 You are a supervisor agent. You will be given a task and you will need to complete it. You will need to use the tools provided to you to complete the task. You will need to use the handoffs to complete the task. You will need to use the tools to complete the task. You will need to use the handoffs to complete the task. You will need to use the tools to complete the task. You will need to use the handoffs to complete the task.
@@ -181,7 +182,8 @@ async function handleToolCalls(
 
 export const getNextResponseFromSupervisor = tool({
   name: "taskListDown",
-  description: "List down the tasks and create a downloadable file.",
+  description:
+    "List down the tasks in a structured JSON format with time estimates and descriptions.",
   parameters: {
     type: "object",
     properties: {
@@ -190,19 +192,13 @@ export const getNextResponseFromSupervisor = tool({
         description:
           "Key information from the user described in their most recent message. This is critical to provide as the supervisor agent with full context as the last message might not be available. Okay to omit if the user message didn't add any new information.",
       },
-      fileName: {
-        type: "string",
-        description:
-          "The name of the file to be downloaded (e.g., 'tasks.txt')",
-      },
     },
-    required: ["relevantContextFromLastUserMessage", "fileName"],
+    required: ["relevantContextFromLastUserMessage"],
     additionalProperties: false,
   },
   execute: async (input, details) => {
-    const { relevantContextFromLastUserMessage, fileName } = input as {
+    const { relevantContextFromLastUserMessage } = input as {
       relevantContextFromLastUserMessage: string;
-      fileName: string;
     };
 
     const addBreadcrumb = (details?.context as any)?.addTranscriptBreadcrumb as
@@ -229,7 +225,19 @@ export const getNextResponseFromSupervisor = tool({
           ==== Relevant Context From Last User Message ===
           ${relevantContextFromLastUserMessage}
           
-          Please list all tasks that need to be completed. Format each task on a new line with a number and description.
+          Please list all tasks that need to be completed in a structured format. For each task, provide:
+          1. A task ID
+          2. A descriptive title
+          3. A detailed description
+          4. An estimated time to complete in minutes
+          
+          Format the response as a JSON array with objects containing:
+          {
+            "taskId": "TASK-1",
+            "title": "Task title",
+            "description": "Detailed task description",
+            "estimatedMinutes": 30
+          }
           `,
         },
       ],
@@ -246,30 +254,52 @@ export const getNextResponseFromSupervisor = tool({
       return { error: "Something went wrong." };
     }
 
-    // Create a Blob and trigger download
+    // Parse the response to ensure it's valid JSON
     try {
-      const blob = new Blob([finalText], { type: "text/plain" });
-      const url = URL.createObjectURL(blob);
+      const tasks = JSON.parse(finalText);
+      if (!Array.isArray(tasks)) {
+        throw new Error("Response is not a JSON array");
+      }
+
+      // Validate each task has required fields
+      tasks.forEach((task: any, index: number) => {
+        if (
+          !task.taskId ||
+          !task.title ||
+          !task.description ||
+          !task.estimatedMinutes
+        ) {
+          throw new Error(`Task at index ${index} is missing required fields`);
+        }
+      });
+
+      console.log("tasks", tasks);
+
+      // Create a Blob with formatted JSON
+      // const jsonContent = JSON.stringify(tasks, null, 2);
+      // const blob = new Blob([jsonContent], { type: "application/json" });
+      // const url = URL.createObjectURL(blob);
 
       // Create a link element
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = fileName;
+      // const link = document.createElement("a");
+      // link.href = url;
+      // link.download = fileName.endsWith(".json")
+      //   ? fileName
+      //   : `${fileName}.json`;
 
       // Append to body, click, and cleanup
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      // document.body.appendChild(link);
+      // link.click();
+      // document.body.removeChild(link);
+      // URL.revokeObjectURL(url);
 
       return {
-        nextResponse: `Tasks have been saved to ${fileName}. The file should start downloading automatically.`,
-        tasks: finalText,
+        tasks: tasks,
       };
     } catch (error: unknown) {
       const errorMessage =
         error instanceof Error ? error.message : "Unknown error occurred";
-      return { error: "Failed to create downloadable file: " + errorMessage };
+      return { error: "Failed to process tasks: " + errorMessage };
     }
   },
 });
