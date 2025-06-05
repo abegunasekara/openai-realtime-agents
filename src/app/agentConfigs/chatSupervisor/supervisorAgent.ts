@@ -1,11 +1,14 @@
 import { RealtimeItem, tool } from "@openai/agents/realtime";
+import fs from "fs/promises";
+import path from "path";
 
 import {
   exampleAccountInfo,
   examplePolicyDocs,
   exampleStoreLocations,
 } from "./sampleData";
-import { ta } from "zod/v4/locales";
+
+const TASKS_FILE_PATH = path.join(process.cwd(), "tasks.json");
 
 export const supervisorAgentInstructions = `
 You are a supervisor agent. You will be given a task and you will need to complete it. You will need to use the tools provided to you to complete the task. You will need to use the handoffs to complete the task. You will need to use the tools to complete the task. You will need to use the handoffs to complete the task. You will need to use the tools to complete the task. You will need to use the handoffs to complete the task.
@@ -254,7 +257,6 @@ export const getNextResponseFromSupervisor = tool({
       return { error: "Something went wrong." };
     }
 
-    // Parse the response to ensure it's valid JSON
     try {
       const tasks = JSON.parse(finalText);
       if (!Array.isArray(tasks)) {
@@ -273,30 +275,15 @@ export const getNextResponseFromSupervisor = tool({
         }
       });
 
-      // addd completed field to each task
+      // Add completed field to each task
       tasks.forEach((task: any) => {
         task.completed = "active";
       });
 
       console.log("tasks", tasks);
 
-      // Create a Blob with formatted JSON
-      // const jsonContent = JSON.stringify(tasks, null, 2);
-      // const blob = new Blob([jsonContent], { type: "application/json" });
-      // const url = URL.createObjectURL(blob);
-
-      // Create a link element
-      // const link = document.createElement("a");
-      // link.href = url;
-      // link.download = fileName.endsWith(".json")
-      //   ? fileName
-      //   : `${fileName}.json`;
-
-      // Append to body, click, and cleanup
-      // document.body.appendChild(link);
-      // link.click();
-      // document.body.removeChild(link);
-      // URL.revokeObjectURL(url);
+      // Save tasks to tasks.json
+      await fs.writeFile(TASKS_FILE_PATH, JSON.stringify({ tasks }, null, 2));
 
       return {
         tasks: tasks,
