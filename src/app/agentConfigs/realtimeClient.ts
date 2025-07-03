@@ -44,6 +44,7 @@ export interface RealtimeClientOptions {
   getEphemeralKey: () => Promise<string>; // returns ek_ string
   initialAgents: RealtimeAgent[]; // first item is root agent
   audioElement?: HTMLAudioElement;
+  customAudioStream?: MediaStream; // Custom audio stream for combined mic + browser audio
   extraContext?: Record<string, any>;
 }
 
@@ -51,9 +52,11 @@ export class RealtimeClient {
   #session: RealtimeSession | null = null;
   #events = new MiniEmitter<ClientEvents>();
   #options: RealtimeClientOptions;
+  #customAudioStream: MediaStream | null = null;
 
   constructor(options: RealtimeClientOptions) {
     this.#options = options;
+    this.#customAudioStream = options.customAudioStream || null;
   }
 
   on<K extends keyof ClientEvents>(event: K, listener: (...args: ClientEvents[K]) => void) {
@@ -70,6 +73,11 @@ export class RealtimeClient {
     const ek = await this.#options.getEphemeralKey();
     const rootAgent = this.#options.initialAgents[0];
 
+    // If we have a custom audio stream, we need to override getUserMedia
+    if (this.#customAudioStream) {
+      this.#overrideGetUserMedia();
+    }
+
     const transportValue: any = this.#options.audioElement
       ? new OpenAIRealtimeWebRTC({
           useInsecureApiKey: true,
@@ -83,7 +91,7 @@ export class RealtimeClient {
       context: this.#options.extraContext ?? {},
     });
 
-    // Immediately notify UI that we’ve started connecting.
+    // Immediately notify UI that we've started connecting.
     this.#events.emit('connection_change', 'connecting');
 
     // Forward every transport event as message for handler and watch for
@@ -94,7 +102,7 @@ export class RealtimeClient {
     transport.on('*', (ev: any) => {
       // Surface raw session.updated to console for debugging missing instructions.
       if (ev?.type === 'session.updated') {
-        // eslint-disable-next-line no-console
+        // Could add console.log for debugging if needed
       }
       this.#events.emit('message', ev);
     });
@@ -138,7 +146,45 @@ export class RealtimeClient {
   disconnect() {
     this.#session?.close();
     this.#session = null;
+    this.#restoreGetUserMedia();
     this.#events.emit('connection_change', 'disconnected');
+  }
+
+  // Store the original getUserMedia function
+  #originalGetUserMedia: typeof navigator.mediaDevices.getUserMedia | null = null;
+
+  #overrideGetUserMedia() {
+    if (!this.#customAudioStream) return;
+
+    // Store the original function
+    this.#originalGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+
+    // Override getUserMedia to return our custom stream
+    navigator.mediaDevices.getUserMedia = async (constraints: MediaStreamConstraints) => {
+      // If audio is requested and we have a custom stream, return it
+      if (constraints.audio && this.#customAudioStream) {
+        return this.#customAudioStream;
+      }
+      // Otherwise, use the original implementation
+      return this.#originalGetUserMedia!(constraints);
+    };
+  }
+
+  #restoreGetUserMedia() {
+    if (this.#originalGetUserMedia) {
+      navigator.mediaDevices.getUserMedia = this.#originalGetUserMedia;
+      this.#originalGetUserMedia = null;
+    }
+  }
+
+  // Method to update the custom audio stream
+  updateCustomAudioStream(stream: MediaStream | null) {
+    this.#customAudioStream = stream;
+    if (stream) {
+      this.#overrideGetUserMedia();
+    } else {
+      this.#restoreGetUserMedia();
+    }
   }
 
   sendUserText(text: string) {

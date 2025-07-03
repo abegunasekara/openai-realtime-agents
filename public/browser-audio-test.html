@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Browser Audio Sharing Compatibility Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        .test-result {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 8px;
+            border: 1px solid;
+        }
+        
+        .success {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+        
+        .warning {
+            background-color: #fff3cd;
+            border-color: #ffeaa7;
+            color: #856404;
+        }
+        
+        .error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+        
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+        }
+        
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Browser Audio Sharing Compatibility Test</h1>
+
+    <div class="test-result info">
+        <strong>Purpose:</strong> This page tests if your browser supports sharing browser audio with the OpenAI Realtime Agents application.
+    </div>
+
+    <h2>Environment Check</h2>
+    <div id="environment-results"></div>
+
+    <h2>API Support Check</h2>
+    <div id="api-results"></div>
+
+    <h2>Live Test</h2>
+    <p>Click the button below to test actual browser audio capture:</p>
+    <button onclick="testBrowserAudioCapture()" id="test-button">Test Browser Audio Capture</button>
+    <button onclick="stopTest()" id="stop-button" disabled>Stop Test</button>
+
+    <div id="test-results"></div>
+
+    <h2>Recommendations</h2>
+    <div id="recommendations"></div>
+
+    <script>
+        let currentStream = null;
+
+        function addResult(containerId, type, title, message) {
+            const container = document.getElementById(containerId);
+            const div = document.createElement('div');
+            div.className = `test-result ${type}`;
+            div.innerHTML = `<strong>${title}:</strong> ${message}`;
+            container.appendChild(div);
+        }
+
+        function checkEnvironment() {
+            const results = [];
+
+            // Check HTTPS/localhost
+            const isSecure = window.isSecureContext ||
+                window.location.hostname === 'localhost' ||
+                window.location.hostname === '127.0.0.1';
+
+            if (isSecure) {
+                addResult('environment-results', 'success', 'Secure Context', 'Running in secure context (HTTPS or localhost) ✓');
+            } else {
+                addResult('environment-results', 'error', 'Secure Context', 'Not running in secure context. Browser audio sharing requires HTTPS or localhost.');
+            }
+
+            // Check browser
+            const userAgent = navigator.userAgent.toLowerCase();
+            if (userAgent.includes('chrome') && !userAgent.includes('edg')) {
+                addResult('environment-results', 'success', 'Browser', 'Chrome detected - Full support expected ✓');
+            } else if (userAgent.includes('edg')) {
+                addResult('environment-results', 'success', 'Browser', 'Edge detected - Full support expected ✓');
+            } else if (userAgent.includes('firefox')) {
+                if (userAgent.includes('android')) {
+                    addResult('environment-results', 'error', 'Browser', 'Firefox on Android - Not supported');
+                } else {
+                    addResult('environment-results', 'warning', 'Browser', 'Firefox detected - Limited support, may work');
+                }
+            } else if (userAgent.includes('safari') && !userAgent.includes('chrome')) {
+                addResult('environment-results', 'warning', 'Browser', 'Safari detected - Limited support');
+            } else {
+                addResult('environment-results', 'warning', 'Browser', 'Unknown browser - Compatibility uncertain');
+            }
+
+            // Check mobile
+            if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+                addResult('environment-results', 'error', 'Platform', 'Mobile device detected - Browser audio sharing generally not supported on mobile');
+            } else {
+                addResult('environment-results', 'success', 'Platform', 'Desktop platform detected ✓');
+            }
+        }
+
+        function checkAPISupport() {
+            // Check MediaDevices
+            if (!navigator.mediaDevices) {
+                addResult('api-results', 'error', 'MediaDevices API', 'navigator.mediaDevices not available');
+                return;
+            } else {
+                addResult('api-results', 'success', 'MediaDevices API', 'Available ✓');
+            }
+
+            // Check getDisplayMedia
+            if (!navigator.mediaDevices.getDisplayMedia) {
+                addResult('api-results', 'error', 'getDisplayMedia API', 'navigator.mediaDevices.getDisplayMedia not available');
+                return;
+            } else {
+                addResult('api-results', 'success', 'getDisplayMedia API', 'Available ✓');
+            }
+
+            // Check getUserMedia
+            if (!navigator.mediaDevices.getUserMedia) {
+                addResult('api-results', 'error', 'getUserMedia API', 'navigator.mediaDevices.getUserMedia not available');
+            } else {
+                addResult('api-results', 'success', 'getUserMedia API', 'Available ✓');
+            }
+
+            // Check Web Audio API
+            if (typeof AudioContext === 'undefined' && typeof webkitAudioContext === 'undefined') {
+                addResult('api-results', 'error', 'Web Audio API', 'AudioContext not available');
+            } else {
+                addResult('api-results', 'success', 'Web Audio API', 'Available ✓');
+            }
+        }
+
+        async function testBrowserAudioCapture() {
+            const testButton = document.getElementById('test-button');
+            const stopButton = document.getElementById('stop-button');
+            const resultsDiv = document.getElementById('test-results');
+
+            testButton.disabled = true;
+            stopButton.disabled = false;
+            resultsDiv.innerHTML = '';
+
+            try {
+                addResult('test-results', 'info', 'Testing', 'Attempting to capture browser audio...');
+
+                // Try different approaches
+                let stream = null;
+
+                // Approach 1: Audio only with constraints
+                try {
+                    stream = await navigator.mediaDevices.getDisplayMedia({
+                        audio: {
+                            echoCancellation: false,
+                            noiseSuppression: false,
+                            autoGainControl: false,
+                        },
+                        video: false,
+                    });
+                    addResult('test-results', 'success', 'Approach 1', 'Audio-only capture with constraints successful ✓');
+                } catch (err) {
+                    addResult('test-results', 'warning', 'Approach 1', `Audio-only capture failed: ${err.message}`);
+
+                    // Approach 2: Simple audio only
+                    try {
+                        stream = await navigator.mediaDevices.getDisplayMedia({
+                            audio: true,
+                            video: false,
+                        });
+                        addResult('test-results', 'success', 'Approach 2', 'Simple audio-only capture successful ✓');
+                    } catch (err2) {
+                        addResult('test-results', 'warning', 'Approach 2', `Simple audio capture failed: ${err2.message}`);
+
+                        // Approach 3: Video + audio
+                        try {
+                            const videoStream = await navigator.mediaDevices.getDisplayMedia({
+                                audio: true,
+                                video: true,
+                            });
+
+                            const audioTracks = videoStream.getAudioTracks();
+                            if (audioTracks.length > 0) {
+                                stream = new MediaStream(audioTracks);
+                                videoStream.getVideoTracks().forEach(track => track.stop());
+                                addResult('test-results', 'success', 'Approach 3', 'Video+audio capture with audio extraction successful ✓');
+                            } else {
+                                throw new Error('No audio tracks found');
+                            }
+                        } catch (err3) {
+                            addResult('test-results', 'error', 'All Approaches Failed', `Final attempt failed: ${err3.message}`);
+                            throw err3;
+                        }
+                    }
+                }
+
+                if (stream) {
+                    currentStream = stream;
+                    const audioTracks = stream.getAudioTracks();
+                    addResult('test-results', 'success', 'Success', `Browser audio capture working! Found ${audioTracks.length} audio track(s)`);
+
+                    // Show track info
+                    audioTracks.forEach((track, index) => {
+                        addResult('test-results', 'info', `Audio Track ${index + 1}`,
+                            `Label: "${track.label}", Enabled: ${track.enabled}, Ready State: ${track.readyState}`);
+                    });
+                }
+
+            } catch (error) {
+                addResult('test-results', 'error', 'Test Failed', error.message);
+                console.error('Browser audio test failed:', error);
+            } finally {
+                testButton.disabled = false;
+            }
+        }
+
+        function stopTest() {
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+                currentStream = null;
+                addResult('test-results', 'info', 'Stopped', 'Test stream stopped');
+            }
+            document.getElementById('stop-button').disabled = true;
+        }
+
+        function showRecommendations() {
+            const container = document.getElementById('recommendations');
+
+            const isSecure = window.isSecureContext ||
+                window.location.hostname === 'localhost' ||
+                window.location.hostname === '127.0.0.1';
+
+            const userAgent = navigator.userAgent.toLowerCase();
+            const hasGetDisplayMedia = navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia;
+
+            if (!isSecure) {
+                addResult('recommendations', 'error', 'Required',
+                    'Use HTTPS or localhost to enable browser audio sharing');
+            }
+
+            if (!hasGetDisplayMedia) {
+                addResult('recommendations', 'error', 'Required',
+                    'Update your browser to a newer version that supports getDisplayMedia()');
+            }
+
+            if (userAgent.includes('firefox') && userAgent.includes('android')) {
+                addResult('recommendations', 'error', 'Not Supported',
+                    'Use Chrome or Edge on desktop instead of Firefox on Android');
+            } else if (userAgent.includes('safari')) {
+                addResult('recommendations', 'warning', 'Limited Support',
+                    'Consider using Chrome or Edge for better compatibility');
+            }
+
+            addResult('recommendations', 'info', 'Best Setup',
+                '<ul>' +
+                '<li>Use Chrome or Edge on desktop</li>' +
+                '<li>Access via HTTPS or localhost</li>' +
+                '<li>When prompted, select "Share audio" checkbox</li>' +
+                '<li>Try sharing "Entire screen" if tab sharing doesn\'t work</li>' +
+                '<li>Ensure system audio is not muted</li>' +
+                '</ul>');
+        }
+
+        // Run checks when page loads
+        window.addEventListener('load', function() {
+            checkEnvironment();
+            checkAPISupport();
+            showRecommendations();
+        });
+    </script>
+</body>
+
+</html>

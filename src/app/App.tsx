@@ -28,11 +28,13 @@ import { allAgentSets, defaultAgentSetKey } from "@/app/agentConfigs";
 import { simpleHandoffScenario } from "@/app/agentConfigs/simpleHandoff";
 import { customerServiceRetailScenario } from "@/app/agentConfigs/customerServiceRetail";
 import { chatSupervisorScenario } from "@/app/agentConfigs/chatSupervisor";
+import { salesAssistScenario } from "@/app/agentConfigs/salesAssist/metana";
 
 const sdkScenarioMap: Record<string, RealtimeAgent[]> = {
   simpleHandoff: simpleHandoffScenario,
   customerServiceRetail: customerServiceRetailScenario,
   chatSupervisor: chatSupervisorScenario,
+  salesAssist: salesAssistScenario,
 };
 
 import useAudioDownload from "./hooks/useAudioDownload";
@@ -101,11 +103,31 @@ function App() {
     }
   );
 
-  // Initialize the recording hook.
-  const { startRecording, stopRecording, downloadRecording } =
-    useAudioDownload();
+  // State for browser audio sharing
+  const [isBrowserAudioSharing, setIsBrowserAudioSharing] = useState<boolean>(
+    () => {
+      if (typeof window === "undefined") return false;
+      const stored = localStorage.getItem("browserAudioSharing");
+      return stored ? stored === "true" : false;
+    }
+  );
 
-  const sendClientEvent = (eventObj: any, eventNameSuffix = "") => {
+  // Initialize the recording hook.
+  const { 
+    startRecording, 
+    stopRecording, 
+    downloadRecording,
+    startBrowserAudioCapture,
+    stopBrowserAudioCapture,
+    getCombinedAudioStream,
+    cleanup,
+    isBrowserAudioEnabled,
+    isCapturingBrowserAudio,
+    browserAudioError,
+    checkBrowserAudioSupport,
+  } = useAudioDownload();
+
+  const sendClientEvent = (eventObj: any) => {
     if (!sdkClientRef.current) {
       console.error("SDK client not available", eventObj);
       return;
@@ -191,6 +213,12 @@ function App() {
         const EPHEMERAL_KEY = await fetchEphemeralKey();
         if (!EPHEMERAL_KEY) return;
 
+        // Get combined audio stream if browser audio sharing is enabled
+        let customAudioStream: MediaStream | null = null;
+        if (isBrowserAudioSharing) {
+          customAudioStream = await getCombinedAudioStream();
+        }
+
         // Ensure the selectedAgentName is first so that it becomes the root
         const reorderedAgents = [...sdkScenarioMap[agentSetKey]];
         const idx = reorderedAgents.findIndex(
@@ -205,6 +233,7 @@ function App() {
           getEphemeralKey: async () => EPHEMERAL_KEY,
           initialAgents: reorderedAgents,
           audioElement: sdkAudioElement,
+          customAudioStream: customAudioStream,
           extraContext: {
             addTranscriptBreadcrumb,
           },
@@ -577,6 +606,9 @@ function App() {
     setSessionStatus("DISCONNECTED");
     setIsPTTUserSpeaking(false);
 
+    // Clean up audio resources (but preserve user preferences)
+    stopRecording();
+    
     logClientEvent({}, "disconnected");
   };
 
@@ -584,22 +616,16 @@ function App() {
     const id = uuidv4().slice(0, 32);
     addTranscriptMessage(id, "user", text, true);
 
-    sendClientEvent(
-      {
-        type: "conversation.item.create",
-        item: {
-          id,
-          type: "message",
-          role: "user",
-          content: [{ type: "input_text", text }],
-        },
+    sendClientEvent({
+      type: "conversation.item.create",
+      item: {
+        id,
+        type: "message",
+        role: "user",
+        content: [{ type: "input_text", text }],
       },
-      "(simulated user text message)"
-    );
-    sendClientEvent(
-      { type: "response.create" },
-      "(trigger response after simulated user text message)"
-    );
+    });
+    sendClientEvent({ type: "response.create" });
   };
 
   const updateSession = (shouldTriggerResponse: boolean = false) => {
@@ -672,7 +698,7 @@ function App() {
     cancelAssistantSpeech();
 
     setIsPTTUserSpeaking(true);
-    sendClientEvent({ type: "input_audio_buffer.clear" }, "clear PTT buffer");
+    sendClientEvent({ type: "input_audio_buffer.clear" });
 
     // No placeholder; we'll rely on server transcript once ready.
   };
@@ -686,8 +712,8 @@ function App() {
       return;
 
     setIsPTTUserSpeaking(false);
-    sendClientEvent({ type: "input_audio_buffer.commit" }, "commit PTT");
-    sendClientEvent({ type: "response.create" }, "trigger response PTT");
+    sendClientEvent({ type: "input_audio_buffer.commit" });
+    sendClientEvent({ type: "response.create" });
   };
 
   const onToggleConnection = () => {
@@ -806,6 +832,69 @@ function App() {
     };
   }, [sessionStatus]);
 
+  // Handle browser audio sharing toggle
+  const handleBrowserAudioSharingToggle = async () => {
+    if (isBrowserAudioSharing) {
+      // Stop browser audio sharing
+      stopBrowserAudioCapture();
+      setIsBrowserAudioSharing(false);
+      localStorage.setItem("browserAudioSharing", "false");
+      
+      // If connected, need to reconnect to properly reset audio stream
+      if (sessionStatus === "CONNECTED") {
+        disconnectFromRealtime();
+        // The reconnection will be triggered by the selectedAgentName effect
+      }
+    } else {
+      // Check browser support before attempting
+      const supportCheck = checkBrowserAudioSupport();
+      if (!supportCheck.supported) {
+        alert(`Browser Audio Sharing Not Supported:\n\n${supportCheck.reason}\n\nPlease try:\n• Use Chrome or Edge on desktop\n• Access via HTTPS or localhost\n• Update your browser to the latest version`);
+        return;
+      }
+
+      // Start browser audio sharing
+      const browserStream = await startBrowserAudioCapture();
+      if (browserStream) {
+        setIsBrowserAudioSharing(true);
+        localStorage.setItem("browserAudioSharing", "true");
+        
+        // If connected, need to reconnect to properly use combined stream
+        if (sessionStatus === "CONNECTED") {
+          disconnectFromRealtime();
+          // The reconnection will be triggered by the selectedAgentName effect
+        }
+      } else if (browserAudioError) {
+        // Show detailed error message
+        alert(`Browser Audio Sharing Failed:\n\n${browserAudioError}\n\nTips:\n• Make sure to click "Share audio" when prompted\n• Try sharing "Entire screen" instead of just a tab\n• Check your system audio settings\n• Use Chrome or Edge for best compatibility`);
+      }
+    }
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      cleanup();
+    };
+  }, [cleanup]);
+
+  // Handle browser audio stream ending
+  useEffect(() => {
+    if (!isBrowserAudioEnabled && isBrowserAudioSharing) {
+      // Browser audio was enabled but now stopped (user ended screen sharing)
+      setIsBrowserAudioSharing(false);
+      localStorage.setItem("browserAudioSharing", "false");
+      
+      // Reconnect to use regular microphone only
+      if (sessionStatus === "CONNECTED") {
+        disconnectFromRealtime();
+      }
+    }
+  }, [isBrowserAudioEnabled, isBrowserAudioSharing, sessionStatus]);
+
+  // Note: We don't reset browser audio sharing preference on disconnect
+  // The user should keep their preference for next connection
+
   const agentSetKey = searchParams.get("agentConfig") || "default";
 
   return (
@@ -888,6 +977,57 @@ function App() {
               </div>
             </div>
           )}
+
+          {/* Browser Audio Sharing Toggle */}
+          <div className="flex items-center ml-6">
+            <button
+              type="button"
+              onClick={handleBrowserAudioSharingToggle}
+              disabled={isCapturingBrowserAudio}
+              className={`flex items-center gap-2 px-3 py-1 rounded-lg text-sm font-medium transition-colors ${
+                isBrowserAudioSharing
+                  ? "bg-blue-500 text-white hover:bg-blue-600"
+                  : browserAudioError
+                  ? "bg-red-100 text-red-700 hover:bg-red-200 border border-red-300"
+                  : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+              } ${
+                isCapturingBrowserAudio ? "opacity-50 cursor-not-allowed" : ""
+              }`}
+              title={browserAudioError || "Share browser audio with the agent"}
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden="true"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                />
+              </svg>
+              {isCapturingBrowserAudio
+                ? "Starting..."
+                : browserAudioError
+                ? "Audio Error"
+                : isBrowserAudioSharing
+                ? "Browser Audio ON"
+                : "Share Browser Audio"}
+            </button>
+            {isBrowserAudioEnabled && (
+              <div className="ml-2 text-xs text-green-600 font-medium">
+                Browser audio active
+              </div>
+            )}
+            {browserAudioError && !isBrowserAudioSharing && (
+              <div className="ml-2 text-xs text-red-600 font-medium max-w-xs truncate" title={browserAudioError}>
+                {browserAudioError.length > 50 ? browserAudioError.substring(0, 50) + "..." : browserAudioError}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
