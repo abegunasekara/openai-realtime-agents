@@ -64,7 +64,7 @@ function useAudioDownload() {
       // Check browser support first
       const supportCheck = checkBrowserAudioSupport();
       if (!supportCheck.supported) {
-        throw new Error(supportCheck.reason);
+        throw new Error(supportCheck.reason ?? "Browser audio capture not supported");
       }
 
       // Try different approaches based on browser
