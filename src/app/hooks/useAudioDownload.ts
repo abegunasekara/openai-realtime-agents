@@ -110,7 +110,8 @@ function useAudioDownload() {
             }
           } catch (thirdError) {
             // All approaches failed
-            throw new Error(`Browser audio capture not supported. Try: 1) Use Chrome/Edge on desktop 2) Share "entire screen" or "browser tab" with audio 3) Ensure system audio is enabled. Details: ${thirdError.message}`);
+            const errorMessage = thirdError instanceof Error ? thirdError.message : String(thirdError);
+            throw new Error(`Browser audio capture not supported. Try: 1) Use Chrome/Edge on desktop 2) Share "entire screen" or "browser tab" with audio 3) Ensure system audio is enabled. Details: ${errorMessage}`);
           }
         }
       }
