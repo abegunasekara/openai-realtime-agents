@@ -216,7 +216,20 @@ function App() {
         // Get combined audio stream if browser audio sharing is enabled
         let customAudioStream: MediaStream | null = null;
         if (isBrowserAudioSharing) {
+          console.log('Browser audio sharing enabled, creating combined stream...');
           customAudioStream = await getCombinedAudioStream();
+          if (customAudioStream) {
+            console.log('Combined stream created for RealtimeClient:', customAudioStream.getTracks().map(t => ({
+              kind: t.kind,
+              label: t.label,
+              enabled: t.enabled,
+              readyState: t.readyState
+            })));
+          } else {
+            console.error('Failed to create combined audio stream');
+          }
+        } else {
+          console.log('Browser audio sharing not enabled, using default microphone');
         }
 
         // Ensure the selectedAgentName is first so that it becomes the root
@@ -238,6 +251,16 @@ function App() {
             addTranscriptBreadcrumb,
           },
         } as any);
+
+        console.log('RealtimeClient created with customAudioStream:', customAudioStream ? 'YES' : 'NO');
+        if (customAudioStream) {
+          console.log('Custom stream tracks passed to client:', customAudioStream.getTracks().map(t => ({
+            kind: t.kind,
+            label: t.label,
+            enabled: t.enabled,
+            readyState: t.readyState
+          })));
+        }
 
         sdkClientRef.current = client;
 

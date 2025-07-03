@@ -180,6 +180,8 @@ function useAudioDownload() {
    */
   const createCombinedAudioStream = useCallback(async () => {
     try {
+      console.log('Creating combined audio stream...');
+      
       // Get microphone stream
       const micStream = await navigator.mediaDevices.getUserMedia({ 
         audio: {
@@ -188,6 +190,13 @@ function useAudioDownload() {
           autoGainControl: true,
         }
       });
+
+      console.log('Microphone stream obtained:', micStream.getTracks().map(t => ({
+        kind: t.kind,
+        label: t.label,
+        enabled: t.enabled,
+        readyState: t.readyState
+      })));
 
       // Create audio context
       const audioContext = new AudioContext();
@@ -201,22 +210,51 @@ function useAudioDownload() {
       micSource.connect(micGain);
       micGain.connect(destination);
 
+      console.log('Microphone connected to combined stream');
+
       // Connect browser audio if available
       if (browserAudioStreamRef.current) {
         try {
-          const browserSource = audioContext.createMediaStreamSource(browserAudioStreamRef.current);
-          const browserGain = audioContext.createGain();
-          browserGain.gain.value = 0.7; // Slightly lower browser audio level
-          browserSource.connect(browserGain);
-          browserGain.connect(destination);
-          console.log("Combined audio stream created with microphone + browser audio");
+          // Check if browser audio stream is still valid
+          const browserTracks = browserAudioStreamRef.current.getTracks();
+          const hasValidBrowserTracks = browserTracks.length > 0 && browserTracks.every(track => track.readyState === 'live');
+          
+          if (!hasValidBrowserTracks) {
+            console.warn('Browser audio stream is invalid, skipping browser audio');
+            browserAudioStreamRef.current = null;
+            setIsBrowserAudioEnabled(false);
+          } else {
+            console.log('Browser audio stream available:', browserAudioStreamRef.current.getTracks().map(t => ({
+              kind: t.kind,
+              label: t.label,
+              enabled: t.enabled,
+              readyState: t.readyState
+            })));
+            
+            const browserSource = audioContext.createMediaStreamSource(browserAudioStreamRef.current);
+            const browserGain = audioContext.createGain();
+            browserGain.gain.value = 0.7; // Slightly lower browser audio level
+            browserSource.connect(browserGain);
+            browserGain.connect(destination);
+            console.log("Combined audio stream created with microphone + browser audio");
+          }
         } catch (browserError) {
           console.warn("Failed to add browser audio to combined stream:", browserError);
           // Continue with just microphone
         }
+      } else {
+        console.log("No browser audio stream available, using microphone only");
       }
 
       combinedStreamRef.current = destination.stream;
+      
+      console.log('Combined stream created successfully:', destination.stream.getTracks().map(t => ({
+        kind: t.kind,
+        label: t.label,
+        enabled: t.enabled,
+        readyState: t.readyState
+      })));
+      
       return destination.stream;
     } catch (err) {
       console.error("Error creating combined audio stream:", err);
@@ -228,9 +266,23 @@ function useAudioDownload() {
    * Gets the current combined audio stream, creating it if necessary
    */
   const getCombinedAudioStream = useCallback(async () => {
+    // Check if we have a valid existing stream
     if (combinedStreamRef.current) {
-      return combinedStreamRef.current;
+      const tracks = combinedStreamRef.current.getTracks();
+      const hasValidTracks = tracks.length > 0 && tracks.every(track => track.readyState === 'live');
+      
+      if (hasValidTracks) {
+        console.log('Returning existing valid combined stream');
+        return combinedStreamRef.current;
+      } else {
+        console.log('Existing combined stream is invalid, creating new one');
+        // Clean up the invalid stream
+        tracks.forEach(track => track.stop());
+        combinedStreamRef.current = null;
+      }
     }
+    
+    console.log('Creating new combined audio stream');
     return await createCombinedAudioStream();
   }, [createCombinedAudioStream]);
 
@@ -305,18 +357,24 @@ function useAudioDownload() {
    * Cleans up audio contexts and streams
    */
   const cleanup = useCallback(() => {
+    console.log('Cleaning up audio resources...');
+    
     stopRecording();
     stopBrowserAudioCapture();
     
     if (audioContextRef.current) {
+      console.log('Closing audio context');
       audioContextRef.current.close();
       audioContextRef.current = null;
     }
     
     if (combinedStreamRef.current) {
+      console.log('Stopping combined stream tracks');
       combinedStreamRef.current.getTracks().forEach(track => track.stop());
       combinedStreamRef.current = null;
     }
+    
+    console.log('Audio cleanup complete');
   }, [stopBrowserAudioCapture]);
 
   /**

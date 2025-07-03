@@ -73,8 +73,9 @@ export class RealtimeClient {
     const ek = await this.#options.getEphemeralKey();
     const rootAgent = this.#options.initialAgents[0];
 
-    // If we have a custom audio stream, we need to override getUserMedia
+    // If we have a custom audio stream, we need to override getUserMedia BEFORE creating the transport
     if (this.#customAudioStream) {
+      console.log('Setting up custom audio stream override');
       this.#overrideGetUserMedia();
     }
 
@@ -161,13 +162,26 @@ export class RealtimeClient {
 
     // Override getUserMedia to return our custom stream
     navigator.mediaDevices.getUserMedia = async (constraints: MediaStreamConstraints) => {
+      console.log('getUserMedia called with constraints:', constraints);
+      
       // If audio is requested and we have a custom stream, return it
       if (constraints.audio && this.#customAudioStream) {
+        console.log('Returning custom audio stream (mic + browser audio)');
+        console.log('Custom stream tracks:', this.#customAudioStream.getTracks().map(t => ({
+          kind: t.kind,
+          label: t.label,
+          enabled: t.enabled,
+          readyState: t.readyState
+        })));
         return this.#customAudioStream;
       }
+      
       // Otherwise, use the original implementation
+      console.log('Using original getUserMedia');
       return this.#originalGetUserMedia!(constraints);
     };
+    
+    console.log('getUserMedia override installed successfully');
   }
 
   #restoreGetUserMedia() {
