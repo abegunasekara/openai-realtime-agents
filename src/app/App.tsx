@@ -929,15 +929,15 @@ function App() {
         >
           <div>
             <Image
-              src="/openai-logomark.svg"
-              alt="OpenAI Logo"
-              width={20}
-              height={20}
+              src="/metana-logo.png"
+              alt="Metana Logo"
+              width={30}
+              height={30}
               className="mr-2"
             />
           </div>
           <div>
-            Realtime API <span className="text-gray-500">Agents</span>
+            Sales Assist <span className="text-gray-500">AI</span>
           </div>
         </div>
         <div className="flex items-center">
